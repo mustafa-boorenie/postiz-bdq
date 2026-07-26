@@ -1,3 +1,5 @@
+> BDQ branding notice: this fork contains branding-only modifications to Postiz. See [NOTICE.md](./NOTICE.md) for modification details and AGPL-3.0 source availability.
+
 <p align="center">
   <a href="https://postiz.com/" target="_blank">
   <picture>

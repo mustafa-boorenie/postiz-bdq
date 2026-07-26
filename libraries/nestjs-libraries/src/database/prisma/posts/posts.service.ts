@@ -42,7 +42,10 @@ import {
   organizationId,
   postId as postIdSearchParam,
 } from '@gitroom/nestjs-libraries/temporal/temporal.search.attribute';
-import { AnalyticsData } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
+import {
+  AnalyticsData,
+  type ImportedPost,
+} from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
 import { timer } from '@gitroom/helpers/utils/timer';
 import { ioRedis } from '@gitroom/nestjs-libraries/redis/redis.service';
 import { RefreshToken } from '@gitroom/nestjs-libraries/integrations/social.abstract';
@@ -148,6 +151,173 @@ export class PostsService {
   async updateReleaseId(orgId: string, postId: string, releaseId: string) {
     return this._postRepository.updateReleaseId(postId, orgId, releaseId);
   }
+  async importPublishedPosts(
+    orgId: string,
+    integrationId: string,
+    options: { since?: string; limit?: number }
+  ): Promise<{ fetched: number; imported: number; skipped: number }> {
+    return this.importPublishedPostsWithRefresh(
+      orgId,
+      integrationId,
+      options,
+      false
+    );
+  }
+
+  private async importPublishedPostsWithRefresh(
+    orgId: string,
+    integrationId: string,
+    options: { since?: string; limit?: number },
+    forceRefresh: boolean
+  ): Promise<{ fetched: number; imported: number; skipped: number }> {
+    const integration = await this._integrationService.getIntegrationById(
+      orgId,
+      integrationId
+    );
+
+    if (!integration) {
+      throw new BadRequestException(
+        `Integration with id ${integrationId} not found`
+      );
+    }
+
+    const integrationProvider = this._integrationManager.getSocialIntegration(
+      integration.providerIdentifier
+    );
+
+    if (!integrationProvider.fetchPublishedPosts) {
+      throw new BadRequestException(
+        'Integration does not support history import'
+      );
+    }
+
+    const limit = Math.min(Math.max(Number(options?.limit ?? 100), 1), 500);
+    const sinceDate = options?.since
+      ? dayjs(options.since)
+      : dayjs().subtract(2, 'year');
+
+    if (!sinceDate.isValid()) {
+      throw new BadRequestException('Invalid since date');
+    }
+
+    if (
+      dayjs(integration?.tokenExpiration).isBefore(dayjs()) ||
+      forceRefresh
+    ) {
+      const data = await this._refreshIntegrationService.refresh(integration);
+      if (!data) {
+        return {
+          fetched: 0,
+          imported: 0,
+          skipped: 0,
+        };
+      }
+
+      const { accessToken } = data;
+
+      if (accessToken) {
+        integration.token = accessToken;
+
+        if (integrationProvider.refreshWait) {
+          await timer(10000);
+        }
+      } else {
+        await this._integrationService.disconnectChannel(orgId, integration);
+        return {
+          fetched: 0,
+          imported: 0,
+          skipped: 0,
+        };
+      }
+    }
+
+    try {
+      const publishedPosts = await integrationProvider.fetchPublishedPosts(
+        integration.internalId,
+        integration.token,
+        {
+          since: sinceDate.toDate(),
+          limit,
+        }
+      );
+      const existingReleaseIds =
+        await this._postRepository.getExistingReleaseIds(
+          integrationId,
+          publishedPosts.map((post) => post.releaseId)
+        );
+      const postsToImport = publishedPosts.filter(
+        (post) => !existingReleaseIds.has(post.releaseId)
+      );
+      const postsWithImages = await this.persistImportedPostImages(
+        orgId,
+        postsToImport
+      );
+      const importedPosts = await this._postRepository.importPublishedPosts(
+        orgId,
+        integrationId,
+        postsWithImages
+      );
+
+      return {
+        fetched: publishedPosts.length,
+        imported: importedPosts.imported,
+        skipped: existingReleaseIds.size + importedPosts.skipped,
+      };
+    } catch (e) {
+      console.log(e);
+      if (e instanceof RefreshToken) {
+        return this.importPublishedPostsWithRefresh(
+          orgId,
+          integrationId,
+          options,
+          true
+        );
+      }
+    }
+
+    return {
+      fetched: 0,
+      imported: 0,
+      skipped: 0,
+    };
+  }
+
+  private async persistImportedPostImages(
+    orgId: string,
+    posts: ImportedPost[]
+  ): Promise<Array<ImportedPost & { image: { id: string; path: string }[] }>> {
+    const postsWithImages: Array<
+      ImportedPost & { image: { id: string; path: string }[] }
+    > = [];
+
+    for (const post of posts) {
+      const firstMediaUrl = post.mediaUrls[0];
+
+      if (!firstMediaUrl) {
+        postsWithImages.push({ ...post, image: [] });
+        continue;
+      }
+
+      try {
+        const file = await this.storage.uploadSimple(firstMediaUrl);
+        const uploadedFile = await this._mediaService.saveFile(
+          orgId,
+          file.split('/').pop(),
+          file
+        );
+        postsWithImages.push({
+          ...post,
+          image: [{ id: uploadedFile.id, path: uploadedFile.path }],
+        });
+      } catch (e) {
+        console.log(e);
+        postsWithImages.push({ ...post, image: [] });
+      }
+    }
+
+    return postsWithImages;
+  }
+
 
   async checkPostAnalytics(
     orgId: string,

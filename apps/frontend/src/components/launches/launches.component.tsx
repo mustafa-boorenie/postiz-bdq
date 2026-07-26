@@ -118,6 +118,7 @@ export const MenuGroupComponent: FC<
           identifier: string;
           changeProfilePicture: boolean;
           changeNickName: boolean;
+          canImportHistory: boolean;
         }
       >;
     };
@@ -220,6 +221,7 @@ export const MenuComponent: FC<
       identifier: string;
       changeProfilePicture: boolean;
       changeNickName: boolean;
+      canImportHistory: boolean;
       refreshNeeded?: boolean;
     };
   }
@@ -336,6 +338,7 @@ export const MenuComponent: FC<
       <Menu
         canChangeProfilePicture={integration.changeProfilePicture}
         canChangeNickName={integration.changeNickName}
+        canImportHistory={!!integration.canImportHistory}
         refreshChannel={refreshChannel}
         mutate={mutate}
         onChange={update}

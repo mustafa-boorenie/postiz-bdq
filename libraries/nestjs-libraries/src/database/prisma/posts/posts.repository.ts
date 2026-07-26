@@ -16,6 +16,11 @@ import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 import utc from 'dayjs/plugin/utc';
 import { v4 as uuidv4 } from 'uuid';
 import { CreateTagDto } from '@gitroom/nestjs-libraries/dtos/posts/create.tag.dto';
+import { type ImportedPost } from '@gitroom/nestjs-libraries/integrations/social/social.integrations.interface';
+
+type ImportedPostWithImages = ImportedPost & {
+  image: { id: string; path: string }[];
+};
 
 dayjs.extend(isoWeek);
 dayjs.extend(weekOfYear);
@@ -32,6 +37,85 @@ export class PostsRepository {
     private _tagsPosts: PrismaRepository<'tagsPosts'>,
     private _errors: PrismaRepository<'errors'>
   ) {}
+
+  private convertCaptionToHtml(content: string) {
+    return content
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\r\n|\n|\r/g, '<br />');
+  }
+
+  async getExistingReleaseIds(integrationId: string, releaseIds: string[]) {
+    if (!releaseIds.length) {
+      return new Set<string>();
+    }
+
+    const existingPosts = await this._post.model.post.findMany({
+      where: {
+        integrationId,
+        releaseId: {
+          in: releaseIds,
+        },
+      },
+      select: {
+        releaseId: true,
+      },
+    });
+
+    return new Set(
+      existingPosts
+        .map((post) => post.releaseId)
+        .filter((id): id is string => !!id)
+    );
+  }
+
+  async importPublishedPosts(
+    orgId: string,
+    integrationId: string,
+    posts: ImportedPostWithImages[]
+  ): Promise<{ imported: number; skipped: number }> {
+    const existingReleaseIds = await this.getExistingReleaseIds(
+      integrationId,
+      posts.map((post) => post.releaseId)
+    );
+    const postsToImport = posts.filter(
+      (post) => !existingReleaseIds.has(post.releaseId)
+    );
+
+    if (!postsToImport.length) {
+      return {
+        imported: 0,
+        skipped: posts.length,
+      };
+    }
+
+    await this._post.model.post.createMany({
+      data: postsToImport.map((post) => ({
+        state: 'PUBLISHED',
+        publishDate: post.publishDate,
+        organizationId: orgId,
+        integrationId,
+        content: this.convertCaptionToHtml(post.content),
+        approvedSubmitForOrder: APPROVED_SUBMIT_FOR_ORDER.NO,
+        delay: 0,
+        group: uuidv4(),
+        releaseId: post.releaseId,
+        releaseURL: post.releaseURL,
+        image: post.image.length ? JSON.stringify(post.image) : null,
+        creationMethod: 'IMPORTED' as CreationMethod,
+        settings: null,
+        parentPostId: null,
+        intervalInDays: null,
+      })),
+    });
+
+    return {
+      imported: postsToImport.length,
+      skipped: posts.length - postsToImport.length,
+    };
+  }
+
 
   searchForMissingThreeHoursPosts() {
     return this._post.model.post.findMany({

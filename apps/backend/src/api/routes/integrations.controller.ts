@@ -20,6 +20,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { GetUserFromRequest } from '@gitroom/nestjs-libraries/user/user.from.request';
 import { PostsService } from '@gitroom/nestjs-libraries/database/prisma/posts/posts.service';
 import { IntegrationTimeDto } from '@gitroom/nestjs-libraries/dtos/integrations/integration.time.dto';
+import { ImportHistoryDto } from '@gitroom/nestjs-libraries/dtos/integrations/import.history.dto';
 import { PlugDto } from '@gitroom/nestjs-libraries/dtos/plugs/plug.dto';
 import { RefreshToken } from '@gitroom/nestjs-libraries/integrations/social.abstract';
 
@@ -115,12 +116,23 @@ export class IntegrationsController {
             time: JSON.parse(p.postingTimes),
             changeProfilePicture: !!findIntegration?.changeProfilePicture,
             changeNickName: !!findIntegration?.changeNickname,
+            canImportHistory: !!findIntegration?.fetchPublishedPosts,
             customer: p.customer,
             additionalSettings: p.additionalSettings || '[]',
           };
         })
       ),
     };
+  }
+
+  @Post('/:id/import-history')
+  @CheckPolicies([AuthorizationActions.Create, Sections.CHANNEL])
+  async importHistory(
+    @GetOrgFromRequest() org: Organization,
+    @Param('id') id: string,
+    @Body() body: ImportHistoryDto
+  ) {
+    return this._postService.importPublishedPosts(org.id, id, body);
   }
 
   @Post('/:id/settings')

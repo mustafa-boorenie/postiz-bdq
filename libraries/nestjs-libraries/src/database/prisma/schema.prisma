@@ -947,6 +947,7 @@ enum CreationMethod {
   API
   AUTOPOST
   CLI
+  IMPORTED
 }
 
 enum ShortLinkPreference {

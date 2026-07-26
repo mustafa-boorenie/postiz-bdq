@@ -1,6 +1,7 @@
 import {
   AnalyticsData,
   AuthTokenDetails,
+  ImportedPost,
   PostDetails,
   PostResponse,
   SocialProvider,
@@ -9,6 +10,7 @@ import { makeId } from '@gitroom/nestjs-libraries/services/make.is';
 import { timer } from '@gitroom/helpers/utils/timer';
 import dayjs from 'dayjs';
 import {
+  RefreshToken,
   SocialAbstract,
   ValidityMedia,
 } from '@gitroom/nestjs-libraries/integrations/social.abstract';
@@ -1090,6 +1092,78 @@ export class InstagramProvider
       return result;
     } catch (err) {
       console.error('Error fetching Instagram post analytics:', err);
+      return [];
+    }
+  }
+
+  async fetchPublishedPosts(
+    internalId: string,
+    token: string,
+    options: { since: Date; limit: number },
+    type = 'graph.facebook.com'
+  ): Promise<ImportedPost[]> {
+    const [accessToken] = token.split('___');
+    const importedPosts: ImportedPost[] = [];
+    let url = `https://${type}/v21.0/${internalId}/media?fields=id,caption,media_type,media_url,permalink,thumbnail_url,timestamp&limit=50&access_token=${accessToken}`;
+    let pageFetches = 0;
+    let reachedSinceBoundary = false;
+
+    try {
+      while (
+        url &&
+        importedPosts.length < options.limit &&
+        pageFetches < 20 &&
+        !reachedSinceBoundary
+      ) {
+        const response = await (await fetch(url)).json();
+
+        if (response?.error?.code === 190) {
+          throw new RefreshToken(
+            'instagram',
+            JSON.stringify(response),
+            {} as BodyInit
+          );
+        }
+
+        const data = response?.data || [];
+
+        for (const item of data) {
+          const publishDate = new Date(item.timestamp);
+
+          if (publishDate < options.since) {
+            reachedSinceBoundary = true;
+            break;
+          }
+
+          importedPosts.push({
+            releaseId: item.id,
+            releaseURL: item.permalink,
+            content: item.caption ?? '',
+            publishDate,
+            mediaUrls:
+              item.media_type === 'VIDEO'
+                ? [item.thumbnail_url, item.media_url].filter(Boolean)
+                : [item.media_url ?? item.thumbnail_url].filter(Boolean),
+          });
+
+          if (importedPosts.length >= options.limit) {
+            break;
+          }
+        }
+
+        url = response?.paging?.next;
+        pageFetches++;
+      }
+
+      return importedPosts
+        .filter((post) => post.publishDate >= options.since)
+        .slice(0, options.limit);
+    } catch (err) {
+      if (err instanceof RefreshToken) {
+        throw err;
+      }
+
+      console.error('Error fetching Instagram published posts:', err);
       return [];
     }
   }

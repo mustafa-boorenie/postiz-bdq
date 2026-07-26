@@ -23,6 +23,7 @@ import { BotPicture } from '@gitroom/frontend/components/launches/bot.picture';
 import { CustomerModal } from '@gitroom/frontend/components/launches/customer.modal';
 import { Integration } from '@prisma/client';
 import { SettingsModal } from '@gitroom/frontend/components/launches/settings.modal';
+import { ImportHistoryModal } from '@gitroom/frontend/components/launches/import-history.modal';
 import { CustomVariables } from '@gitroom/frontend/components/launches/add.provider.component';
 import { useRouter } from 'next/navigation';
 import { useVariables } from '@gitroom/react/helpers/variable.context';
@@ -37,6 +38,7 @@ export const Menu: FC<{
   canDisable: boolean;
   canChangeProfilePicture: boolean;
   canChangeNickName: boolean;
+  canImportHistory: boolean;
   refreshChannel: (
     integration: Integration & {
       identifier: string;
@@ -54,6 +56,7 @@ export const Menu: FC<{
     mutate,
     canChangeProfilePicture,
     canChangeNickName,
+    canImportHistory,
     refreshChannel,
   } = props;
   const t = useT();
@@ -312,6 +315,28 @@ export const Menu: FC<{
     });
     setShow(false);
   }, [integrations, t]);
+  const importHistory = useCallback(() => {
+    const findIntegration = integrations.find(
+      (integration) => integration.id === id
+    );
+    modal.openModal({
+      classNames: {
+        modal: 'md',
+      },
+      title: t('import_past_posts', 'Import past posts'),
+      withCloseButton: false,
+      closeOnEscape: true,
+      closeOnClickOutside: true,
+      children: (
+        <ImportHistoryModal
+          integrationId={findIntegration!.id}
+          close={() => modal.closeAll()}
+          onDone={reloadCalendarView}
+        />
+      ),
+    });
+    setShow(false);
+  }, [integrations, t, reloadCalendarView]);
   const updateCredentials = useCallback(() => {
     modal.openModal({
       title: t('custom_url', 'Custom URL'),
@@ -536,6 +561,30 @@ export const Menu: FC<{
               {t('move_add_to_group', 'Move / add to group')}
             </div>
           </div>
+          {canImportHistory && (
+            <div
+              className="flex gap-[12px] items-center py-[8px] px-[10px]"
+              onClick={importHistory}
+            >
+              <div>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="18"
+                  height="18"
+                  viewBox="0 0 32 32"
+                  fill="none"
+                >
+                  <path
+                    d="M21 4H11C9.14409 4.00199 7.36477 4.74012 6.05245 6.05245C4.74012 7.36477 4.00199 9.14409 4 11V21C4.00199 22.8559 4.74012 24.6352 6.05245 25.9476C7.36477 27.2599 9.14409 27.998 11 28H17C17.1075 27.9999 17.2142 27.9826 17.3162 27.9487C20.595 26.855 26.855 20.595 27.9487 17.3162C27.9826 17.2142 27.9999 17.1075 28 17V11C27.998 9.14409 27.2599 7.36477 25.9476 6.05245C24.6352 4.74012 22.8559 4.00199 21 4ZM17 25.9275V22C17 20.6739 17.5268 19.4021 18.4645 18.4645C19.4021 17.5268 20.6739 17 22 17H25.9275C24.77 19.6938 19.6938 24.77 17 25.9275Z"
+                    fill="green"
+                  />
+                </svg>
+              </div>
+              <div className="text-[14px]">
+                {t('import_past_posts', 'Import past posts')}
+              </div>
+            </div>
+          )}
           <div
             className="flex gap-[12px] items-center py-[8px] px-[10px]"
             onClick={editTimeTable}

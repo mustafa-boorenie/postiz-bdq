@@ -34,6 +34,11 @@ export interface IAuthenticator {
     postId: string,
     fromDate: number,
   ): Promise<AnalyticsData[]>;
+  fetchPublishedPosts?(
+    internalId: string,
+    accessToken: string,
+    options: { since: Date; limit: number }
+  ): Promise<ImportedPost[]>;
   changeNickname?(
     id: string,
     accessToken: string,
@@ -56,6 +61,13 @@ export interface AnalyticsData {
   percentageChange: number;
 }
 
+export interface ImportedPost {
+  releaseId: string;
+  releaseURL: string;
+  content: string;
+  publishDate: Date;
+  mediaUrls: string[];
+}
 
 export type GenerateAuthUrlResponse = {
   url: string;

@@ -233,4 +233,17 @@ export class InstagramStandaloneProvider
       'graph.instagram.com'
     );
   }
+
+  async fetchPublishedPosts(
+    internalId: string,
+    accessToken: string,
+    options: { since: Date; limit: number }
+  ) {
+    return instagramProvider.fetchPublishedPosts(
+      internalId,
+      accessToken,
+      options,
+      'graph.instagram.com'
+    );
+  }
 }

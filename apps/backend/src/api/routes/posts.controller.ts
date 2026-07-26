@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { PostsService } from '@gitroom/nestjs-libraries/database/prisma/posts/posts.service';
 import { GetOrgFromRequest } from '@gitroom/nestjs-libraries/user/org.from.request';
-import { Organization, User } from '@prisma/client';
+import { Organization, State, User } from '@prisma/client';
 import { GetPostsDto } from '@gitroom/nestjs-libraries/dtos/posts/get.posts.dto';
 import { GetPostsListDto } from '@gitroom/nestjs-libraries/dtos/posts/get.posts.list.dto';
 import { CheckPolicies } from '@gitroom/backend/services/auth/permissions/permissions.ability';
@@ -30,6 +30,13 @@ import {
 } from '@gitroom/backend/services/auth/permissions/permission.exception.class';
 import { PostValidationException } from '@gitroom/backend/api/routes/posts.validation.exception';
 
+const EDITOR_DRAFT_ONLY_MESSAGE =
+  'Editors can only save drafts — ask an admin to schedule this post.';
+
+type OrganizationWithRequestUserRole = Organization & {
+  users?: { role?: string }[];
+};
+
 @ApiTags('Posts')
 @Controller('/posts')
 export class PostsController {
@@ -38,6 +45,72 @@ export class PostsController {
     private _agentGraphService: AgentGraphService,
     private _shortLinkService: ShortLinkService
   ) {}
+
+  private async assertDraftOnlyEditorCanSave(
+    org: Organization,
+    rawBody: {
+      type?: string;
+      posts?: { value?: { id?: string }[] }[];
+    }
+  ) {
+    const role = (org as OrganizationWithRequestUserRole).users?.[0]?.role;
+    if (role !== 'USER') {
+      return;
+    }
+
+    if (rawBody?.type !== 'draft') {
+      throw new HttpException(EDITOR_DRAFT_ONLY_MESSAGE, 403);
+    }
+
+    const postIds = Array.from(
+      new Set(
+        (rawBody?.posts || [])
+          .flatMap((post) => post.value || [])
+          .map((value) => value.id)
+          .filter((id): id is string => !!id)
+      )
+    );
+
+    for (const postId of postIds) {
+      const post = await this._postsService.getPostById(postId, org.id);
+      if (post && post.state !== State.DRAFT) {
+        throw new HttpException(EDITOR_DRAFT_ONLY_MESSAGE, 403);
+      }
+    }
+  }
+
+  private async assertDraftOnlyEditorCanDelete(
+    org: Organization,
+    group: string
+  ) {
+    const role = (org as OrganizationWithRequestUserRole).users?.[0]?.role;
+    if (role !== 'USER') {
+      return;
+    }
+
+    const canDelete = await this._postsService.canDeleteDraftOnlyPost(
+      org.id,
+      group
+    );
+    if (!canDelete) {
+      throw new HttpException(EDITOR_DRAFT_ONLY_MESSAGE, 403);
+    }
+  }
+
+  private async assertDraftOnlyEditorCanChangeDate(
+    org: Organization,
+    postId: string
+  ) {
+    const role = (org as OrganizationWithRequestUserRole).users?.[0]?.role;
+    if (role !== 'USER') {
+      return;
+    }
+
+    const post = await this._postsService.getPostById(postId, org.id);
+    if (post && post.state !== State.DRAFT) {
+      throw new HttpException(EDITOR_DRAFT_ONLY_MESSAGE, 403);
+    }
+  }
 
   @Get('/:id/statistics')
   async getStatistics(
@@ -182,6 +255,7 @@ export class PostsController {
     @GetOrgFromRequest() org: Organization,
     @Body() rawBody: any
   ) {
+    await this.assertDraftOnlyEditorCanSave(org, rawBody);
     // Server-side validation — never trust the client to have validated.
     const validation = await this._postsService.validatePosts(
       org.id,
@@ -261,20 +335,22 @@ export class PostsController {
   }
 
   @Delete('/:group')
-  deletePost(
+  async deletePost(
     @GetOrgFromRequest() org: Organization,
     @Param('group') group: string
   ) {
+    await this.assertDraftOnlyEditorCanDelete(org, group);
     return this._postsService.deletePost(org.id, group);
   }
 
   @Put('/:id/date')
-  changeDate(
+  async changeDate(
     @GetOrgFromRequest() org: Organization,
     @Param('id') id: string,
     @Body('date') date: string,
     @Body('action') action: 'schedule' | 'update' = 'schedule'
   ) {
+    await this.assertDraftOnlyEditorCanChangeDate(org, id);
     return this._postsService.changeDate(org.id, id, date, action);
   }
 

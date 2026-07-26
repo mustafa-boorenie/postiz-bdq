@@ -148,6 +148,11 @@ export class PostsService {
     return this._postRepository.getPostById(postId, orgId);
   }
 
+  async canDeleteDraftOnlyPost(orgId: string, group: string) {
+    const post = await this._postRepository.getRootPostByGroup(orgId, group);
+    return !post || post.state === State.DRAFT || post.state === State.ERROR;
+  }
+
   async updateReleaseId(orgId: string, postId: string, releaseId: string) {
     return this._postRepository.updateReleaseId(postId, orgId, releaseId);
   }

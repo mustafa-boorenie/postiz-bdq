@@ -43,6 +43,10 @@ import { useHasScroll } from '@gitroom/frontend/components/ui/is.scroll.hook';
 import { useShortlinkPreference } from '@gitroom/frontend/components/settings/shortlink-preference.component';
 import dayjs from 'dayjs';
 import { Button } from '@gitroom/react/form/button';
+import { useUser } from '@gitroom/frontend/components/layout/user.context';
+
+const EDITOR_DRAFT_ONLY_MESSAGE =
+  'Editors can only save drafts — ask an admin to schedule this post.';
 
 export const ManageModal: FC<AddEditModalProps> = (props) => {
   const t = useT();
@@ -54,8 +58,15 @@ export const ManageModal: FC<AddEditModalProps> = (props) => {
   const modal = useModals();
   const [showSettings, setShowSettings] = useState(false);
   const { data: shortlinkPreferenceData } = useShortlinkPreference();
+  const user = useUser();
 
   const { addEditSets, mutate, customClose, dummy } = props;
+  const isDraftOnlyEditor = user?.role === 'USER';
+  const canDeleteExistingPost =
+    !isDraftOnlyEditor ||
+    existingData?.posts?.[0]?.state === 'DRAFT' ||
+    existingData?.posts?.[0]?.state === 'ERROR';
+
 
   const {
     selectedIntegrations,
@@ -182,9 +193,14 @@ export const ManageModal: FC<AddEditModalProps> = (props) => {
       setLoading(false);
       return;
     }
-    await fetch(`/posts/${existingData.group}`, {
+    const response = await fetch(`/posts/${existingData.group}`, {
       method: 'DELETE',
     });
+    if (!response.ok) {
+      toaster.show(EDITOR_DRAFT_ONLY_MESSAGE, 'warning');
+      setLoading(false);
+      return;
+    }
     mutate();
     modal.closeAll();
     return;
@@ -409,13 +425,24 @@ export const ManageModal: FC<AddEditModalProps> = (props) => {
       }
 
       if (!dummy) {
-        addEditSets
-          ? addEditSets(data)
-          : await fetch('/posts', {
-              method: 'POST',
-              body: JSON.stringify(data),
-            });
-
+        if (addEditSets) {
+          addEditSets(data);
+        } else {
+          const response = await fetch('/posts', {
+            method: 'POST',
+            body: JSON.stringify(data),
+          });
+          if (!response.ok) {
+            const error = await response.json().catch(() => undefined);
+            toaster.show(
+              error?.message ||
+                t('could_not_save_post', 'Could not save post'),
+              'warning'
+            );
+            setLoading(false);
+            return;
+          }
+        }
         if (!addEditSets) {
           mutate();
           toaster.show(
@@ -567,7 +594,7 @@ export const ManageModal: FC<AddEditModalProps> = (props) => {
             )}
           </div>
           <div className="pe-[20px] flex items-center justify-end gap-[8px]">
-            {existingData?.integration && (
+            {existingData?.integration && canDeleteExistingPost && (
               <button
                 onClick={deletePost}
                 className="cursor-pointer flex text-[#FF3F3F] gap-[8px] items-center text-[15px] font-[600]"
@@ -608,7 +635,7 @@ export const ManageModal: FC<AddEditModalProps> = (props) => {
                 Save Set
               </button>
             )}
-            {!addEditSets && (
+            {!addEditSets && !isDraftOnlyEditor && (
               <div className="group cursor-pointer relative">
                 <button
                   disabled={

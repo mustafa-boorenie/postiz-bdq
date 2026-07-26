@@ -9,5 +9,6 @@ Summary of modifications:
 - Replaced selected user-facing Postiz marketing copy with BDQ-branded copy.
 - Removed the authentication-page third-party testimonial/user-count claim from the branded login layout.
 - Added Instagram published-post import: an optional `fetchPublishedPosts` member on the social provider contract, an implementation for the Instagram and Instagram Standalone providers, `PostsService.importPublishedPosts`, the `POST /integrations/:id/import-history` route, a `canImportHistory` capability flag on the integrations list, a new `IMPORTED` value in the `CreationMethod` Prisma enum, and an "Import past posts" channel menu action.
+- Restricted org members with role `USER` to draft-only post editing: backend routes reject scheduling/publishing and non-draft deletion, while the composer hides schedule/publish affordances for editor seats.
 
 The upstream AGPL-3.0 license remains in effect, and the Corresponding Source for this modified network service is available in this public repository under AGPL-3.0.

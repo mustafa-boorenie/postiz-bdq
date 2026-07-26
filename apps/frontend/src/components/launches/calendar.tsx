@@ -590,6 +590,7 @@ export const CalendarColumn: FC<{
   const { getDate, randomHour } = props;
   const [num, setNum] = useState(0);
   const user = useUser();
+  const isDraftOnlyEditor = user?.role === 'USER';
   const {
     integrations,
     posts,
@@ -663,6 +664,9 @@ export const CalendarColumn: FC<{
 
       // Find the post to check its state
       const post = posts.find((p) => p.id === item.id);
+      if (isDraftOnlyEditor && post?.state !== 'DRAFT') {
+        return;
+      }
       let action: 'schedule' | 'update' = 'schedule';
 
       // Check if post is already published or queued in the past
@@ -743,7 +747,7 @@ export const CalendarColumn: FC<{
     collect: (monitor) => ({
       canDrop: isBeforeNow ? false : !!monitor.canDrop() && !!monitor.isOver(),
     }),
-  }), [posts]);
+  }), [posts, isDraftOnlyEditor]);
 
   const addModal = useCallback(async () => {
     const set: any = !sets.length
@@ -1008,6 +1012,10 @@ const CalendarItem: FC<{
   } = props;
   const { disableXAnalytics } = useVariables();
   const user = useUser();
+  const isDraftOnlyEditor = user?.role === 'USER';
+  const canDeletePost =
+    !isDraftOnlyEditor || state === 'DRAFT' || state === 'ERROR';
+  const canDragPost = !isDraftOnlyEditor || state === 'DRAFT';
   const showCreationMethodBadge =
     user?.impersonate &&
     post.creationMethod &&
@@ -1023,11 +1031,12 @@ const CalendarItem: FC<{
         interval: !!post.intervalInDays,
         date,
       },
+      canDrag: canDragPost,
       collect: (monitor) => ({
         opacity: monitor.isDragging() ? 0 : 1,
       }),
     }),
-    []
+    [canDragPost, date, post.id, post.intervalInDays]
   );
   return (
     <div
@@ -1129,15 +1138,17 @@ const CalendarItem: FC<{
         ) : (
           <></>
         )}{' '}
-        <div
-          className={clsx(
-            'hidden group-hover:block hover:underline cursor-pointer',
-            post?.tags?.[0]?.tag?.color && 'mix-blend-difference'
-          )}
-          onClick={deletePost}
-        >
-          <DeletePost />
-        </div>
+        {canDeletePost && (
+          <div
+            className={clsx(
+              'hidden group-hover:block hover:underline cursor-pointer',
+              post?.tags?.[0]?.tag?.color && 'mix-blend-difference'
+            )}
+            onClick={deletePost}
+          >
+            <DeletePost />
+          </div>
+        )}
       </div>
       <div
         onClick={editPost}

@@ -427,6 +427,21 @@ export class PostsRepository {
     });
   }
 
+  getRootPostByGroup(orgId: string, group: string) {
+    return this._post.model.post.findFirst({
+      where: {
+        group,
+        organizationId: orgId,
+        parentPostId: null,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        state: true,
+      },
+    });
+  }
+
   getPostsByGroup(orgId: string, group: string) {
     return this._post.model.post.findMany({
       where: {
